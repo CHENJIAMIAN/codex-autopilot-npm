@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { parseArgs } = require('../src/cli');
+const { main, parseArgs } = require('../src/cli');
 
 test('parses kebab-case options', () => {
   const options = parseArgs([
@@ -31,4 +31,25 @@ test('parses PowerShell-style options', () => {
 
 test('rejects unsupported execution mode', () => {
   assert.throws(() => parseArgs(['--codex-execution-mode', 'unsafe']), /Unsupported codex execution mode/);
+});
+
+test('prints help through injectable stdout', async () => {
+  let output = '';
+  const exitCode = await main(['--help'], {
+    stdout: { write: (chunk) => { output += chunk; } }
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(output, /Usage:/);
+  assert.match(output, /--max-turns <n>/);
+});
+
+test('prints version through injectable stdout', async () => {
+  let output = '';
+  const exitCode = await main(['--version'], {
+    stdout: { write: (chunk) => { output += chunk; } }
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(output.trim(), '0.1.0');
 });

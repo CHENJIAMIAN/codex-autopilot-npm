@@ -116,14 +116,15 @@ function validateOptions(options) {
   }
 }
 
-async function main(argv = process.argv.slice(2)) {
+async function main(argv = process.argv.slice(2), io = {}) {
+  const stdout = io.stdout || process.stdout;
   const options = parseArgs(argv);
   if (options.help) {
-    process.stdout.write(getHelpText());
+    stdout.write(getHelpText());
     return 0;
   }
   if (options.version) {
-    process.stdout.write(`${require('../package.json').version}\n`);
+    stdout.write(`${require('../package.json').version}\n`);
     return 0;
   }
 
