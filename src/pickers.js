@@ -18,19 +18,33 @@ async function getResumePromptOptions(promptsFile) {
   return getDefaultResumePromptOptions();
 }
 
-async function selectResumePrompt({ promptsFile, rl = createReadline() } = {}) {
-  const options = await getResumePromptOptions(promptsFile);
+const CUSTOM_PROMPT = Symbol('customResumePrompt');
+
+async function selectResumePrompt({ promptsFile, getOptions = getResumePromptOptions, rl = createReadline(), output: out = output } = {}) {
+  const options = await getOptions(promptsFile);
   const entries = options.map((value, index) => ({
     index: index + 1,
     label: getPromptLabel(value),
     value
   }));
-  return selectNumbered({
+  entries.push({
+    index: entries.length + 1,
+    label: ui.promptLabelCustom,
+    value: CUSTOM_PROMPT
+  });
+
+  const selected = await selectNumbered({
     entries,
     prompt: ui.selectPromptPrompt,
     emptyMessage: ui.noPromptSelected,
-    rl
+    rl,
+    output: out
   });
+  if (selected !== CUSTOM_PROMPT) return selected;
+
+  const customPrompt = (await rl.question(ui.customPromptInput)).trim();
+  if (!customPrompt) throw new Error(ui.noPromptSelected);
+  return customPrompt;
 }
 
 function getPromptLabel(value) {
@@ -40,7 +54,7 @@ function getPromptLabel(value) {
   return value;
 }
 
-async function selectMaxTurns({ rl = createReadline() } = {}) {
+async function selectMaxTurns({ rl = createReadline(), output: out = output } = {}) {
   const entries = getDefaultMaxTurnOptions().map((value, index) => ({
     index: index + 1,
     label: value === 50 ? ui.maxTurnsLabelDefault : String(value),
@@ -50,15 +64,16 @@ async function selectMaxTurns({ rl = createReadline() } = {}) {
     entries,
     prompt: ui.selectMaxTurnsPrompt,
     emptyMessage: ui.noMaxTurnsSelected,
-    rl
+    rl,
+    output: out
   });
 }
 
-async function selectNumbered({ entries, prompt, emptyMessage, rl }) {
+async function selectNumbered({ entries, prompt, emptyMessage, rl, output: out = output }) {
   if (!entries.length) throw new Error(emptyMessage);
-  output.write(`${prompt}\n`);
+  out.write(`${prompt}\n`);
   for (const entry of entries) {
-    output.write(`[${entry.index}] ${entry.label}\n`);
+    out.write(`[${entry.index}] ${entry.label}\n`);
   }
   while (true) {
     const answer = (await rl.question('> ')).trim();
@@ -67,7 +82,7 @@ async function selectNumbered({ entries, prompt, emptyMessage, rl }) {
     if (Number.isInteger(index) && index >= 1 && index <= entries.length) {
       return entries[index - 1].value;
     }
-    output.write(`${ui.invalidSelection}\n`);
+    out.write(`${ui.invalidSelection}\n`);
   }
 }
 

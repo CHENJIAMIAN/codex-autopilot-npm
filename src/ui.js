@@ -11,6 +11,8 @@ const ui = {
   promptLabelDefault: '详细提示语',
   promptLabelShort: '简短提示语：继续',
   promptLabelOkay: '简短提示语：好,可以,继续',
+  promptLabelCustom: '自定义提示语',
+  customPromptInput: '请输入自定义提示语: ',
   maxTurnsLabelDefault: '50（默认）',
   noSessionsFound: '未找到 Codex 会话。',
   noSessionSelected: '未选择任何会话。',

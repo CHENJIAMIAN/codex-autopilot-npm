@@ -38,7 +38,7 @@ The full command `codex-autopilot` is also available, but `cauto` is the recomme
 The default interactive flow is:
 
 1. Select a Codex session.
-2. Select a resume prompt if `--resume-prompt` was not passed.
+2. Select a resume prompt, or choose `自定义提示语` and type one directly, if `--resume-prompt` was not passed.
 3. Select max turns if `--max-turns` was not passed.
 4. Continue the session turn by turn.
 

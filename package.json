@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Windows-oriented npm CLI that continues existing Codex sessions turn by turn.",
   "license": "MIT",
+  "homepage": "https://github.com/CHENJIAMIAN/codex-autopilot-npm#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CHENJIAMIAN/codex-autopilot-npm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CHENJIAMIAN/codex-autopilot-npm/issues"
+  },
   "type": "commonjs",
   "files": [
     "src",
