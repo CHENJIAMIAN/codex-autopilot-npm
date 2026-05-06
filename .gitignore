@@ -1,0 +1,8 @@
+node_modules/
+npm-debug.log*
+*.log
+*.tmp
+*.bak
+run-state.json
+coverage/
+.nyc_output/

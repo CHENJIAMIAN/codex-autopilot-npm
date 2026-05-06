@@ -1,0 +1,28 @@
+{
+  "name": "codex-autopilot-npm",
+  "version": "0.1.0",
+  "description": "Windows-oriented npm CLI that continues existing Codex sessions turn by turn.",
+  "license": "MIT",
+  "type": "commonjs",
+  "files": [
+    "src",
+    "resume-prompts.txt"
+  ],
+  "bin": {
+    "codex-autopilot": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "codex",
+    "codex-cli",
+    "autopilot",
+    "windows",
+    "automation"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
