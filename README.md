@@ -30,8 +30,10 @@ npm start
 After global installation or local linking:
 
 ```powershell
-codex-autopilot --max-turns 5
+cauto --max-turns 5
 ```
+
+The full command `codex-autopilot` is also available, but `cauto` is the recommended short alias.
 
 The default interactive flow is:
 
@@ -43,10 +45,10 @@ The default interactive flow is:
 ## Common Options
 
 ```powershell
-codex-autopilot --session-id <uuid> --max-turns 10
-codex-autopilot --codex-execution-mode full-auto
-codex-autopilot --codex-execution-mode sandbox --codex-sandbox-mode workspace-write
-codex-autopilot --retry-count 2 --retry-delay-seconds 10
+cauto --session-id <uuid> --max-turns 10
+cauto --codex-execution-mode full-auto
+cauto --codex-execution-mode sandbox --codex-sandbox-mode workspace-write
+cauto --retry-count 2 --retry-delay-seconds 10
 ```
 
 PowerShell-style option names are also accepted, for example `-MaxTurns 10` and `-SessionId <uuid>`.

@@ -9,7 +9,8 @@
     "resume-prompts.txt"
   ],
   "bin": {
-    "codex-autopilot": "src/cli.js"
+    "codex-autopilot": "src/cli.js",
+    "cauto": "src/cli.js"
   },
   "scripts": {
     "start": "node src/cli.js",
