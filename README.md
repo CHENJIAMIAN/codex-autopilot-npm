@@ -1,6 +1,29 @@
 # codex-autopilot-npm
 
-`codex-autopilot-npm` is an npm CLI recreation of the PowerShell `codex-autopilot` workflow. It resumes existing Codex sessions and keeps running turn by turn until the configured turn budget, a non-zero Codex exit, or a conservative stall recovery path stops the run.
+`codex-autopilot-npm` is a Windows-focused CLI for resuming an existing Codex session and keeping it moving turn by turn. It recreates the PowerShell `codex-autopilot` workflow as a published npm package.
+
+## Install
+
+```powershell
+npm install -g codex-autopilot-npm
+```
+
+After installation, use the short command:
+
+```powershell
+cauto
+```
+
+The full command `codex-autopilot` is also available.
+
+## Quick Start
+
+The default interactive flow is:
+
+1. Select an existing Codex session.
+2. Select a resume prompt, or choose `自定义提示语` and type one directly.
+3. Select max turns if `--max-turns` was not passed.
+4. Continue the session turn by turn until it exits or reaches the turn budget.
 
 ## Features
 
@@ -14,37 +37,11 @@
 - Read Codex rollout JSONL files and show working directory plus preview.
 - Preserve UTF-8 output for Chinese prompts and logs.
 
-## Requirements
-
-- Windows is the primary target.
-- Node.js 20 or newer.
-- Codex CLI available as `codex`.
-- Optional: `fzf` for searchable session selection.
-
-## Usage
+## Common Commands
 
 ```powershell
-npm start
-```
-
-After global installation or local linking:
-
-```powershell
+cauto
 cauto --max-turns 5
-```
-
-The full command `codex-autopilot` is also available, but `cauto` is the recommended short alias.
-
-The default interactive flow is:
-
-1. Select a Codex session.
-2. Select a resume prompt, or choose `自定义提示语` and type one directly, if `--resume-prompt` was not passed.
-3. Select max turns if `--max-turns` was not passed.
-4. Continue the session turn by turn.
-
-## Common Options
-
-```powershell
 cauto --session-id <uuid> --max-turns 10
 cauto --codex-execution-mode full-auto
 cauto --codex-execution-mode sandbox --codex-sandbox-mode workspace-write
@@ -52,6 +49,19 @@ cauto --retry-count 2 --retry-delay-seconds 10
 ```
 
 PowerShell-style option names are also accepted, for example `-MaxTurns 10` and `-SessionId <uuid>`.
+
+## Requirements
+
+- Windows is the primary target.
+- Node.js 20 or newer.
+- Codex CLI available as `codex`.
+- Optional: `fzf` for searchable session selection.
+
+## Development
+
+```powershell
+npm start
+```
 
 ## Verification
 
