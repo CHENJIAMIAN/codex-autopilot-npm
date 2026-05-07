@@ -44,7 +44,12 @@ async function invokeCodexAutopilot({
   for (const message of restoreLogs) await log(message);
 
   if (turn >= maxTurns) {
-    setWindowTitle(getWindowTitle({ phase: 'Completed' }));
+    setWindowTitle(getWindowTitle({
+      phase: 'Completed',
+      turn: maxTurns,
+      maxTurns,
+      sessionId
+    }));
     statusLine.finish(formatStatusLine({
       phase: '已完成',
       turn: maxTurns,
@@ -62,7 +67,14 @@ async function invokeCodexAutopilot({
   while (turn < maxTurns) {
     turn += 1;
     await log(`event=turn_start turn=${turn} max_turns=${maxTurns} session_id=${sessionId || '-'} working_directory=${workingDirectory || '-'}`);
-    setWindowTitle(getWindowTitle({ phase: 'Running', turn, maxTurns }));
+    setWindowTitle(getWindowTitle({
+      phase: 'Running',
+      turn,
+      maxTurns,
+      retryAttempt: 0,
+      retryCount,
+      sessionId
+    }));
     statusLine.render(formatStatusLine({
       phase: '运行中',
       turn,
@@ -88,6 +100,14 @@ async function invokeCodexAutopilot({
     let exitCode = 0;
     let stallRecovered = false;
     do {
+      setWindowTitle(getWindowTitle({
+        phase: attempt > 0 ? 'Retrying' : 'Running',
+        turn,
+        maxTurns,
+        retryAttempt: attempt,
+        retryCount,
+        sessionId
+      }));
       statusLine.render(formatStatusLine({
         phase: attempt > 0 ? '重试中' : '运行中',
         turn,
@@ -136,7 +156,15 @@ async function invokeCodexAutopilot({
     if (exitCode !== 0) {
       const stopReason = retryCount > 0 ? 'exec_retry_exhausted' : 'exec_exit_nonzero';
       lastMessage = await readLastMessageFile({ path: lastMessageFile, turn, log });
-      setWindowTitle(getWindowTitle({ phase: 'Failed', exitCode }));
+      setWindowTitle(getWindowTitle({
+        phase: 'Failed',
+        turn,
+        maxTurns,
+        retryAttempt: attempt,
+        retryCount,
+        sessionId,
+        exitCode
+      }));
       statusLine.finish(formatStatusLine({
         phase: '失败',
         turn,
@@ -185,6 +213,14 @@ async function invokeCodexAutopilot({
     });
 
     if (turn < maxTurns) {
+      setWindowTitle(getWindowTitle({
+        phase: 'Sleeping',
+        turn,
+        maxTurns,
+        retryAttempt: attempt,
+        retryCount,
+        sessionId
+      }));
       statusLine.render(formatStatusLine({
         phase: '休眠中',
         turn,
@@ -202,7 +238,12 @@ async function invokeCodexAutopilot({
     }
   }
 
-  setWindowTitle(getWindowTitle({ phase: 'Completed' }));
+  setWindowTitle(getWindowTitle({
+    phase: 'Completed',
+    turn,
+    maxTurns,
+    sessionId
+  }));
   statusLine.finish(formatStatusLine({
     phase: '已完成',
     turn,
@@ -273,10 +314,21 @@ function getTurnBanner({ turn, maxTurns, phase = 'Begin' }) {
   return `========== Turn ${turn} / ${maxTurns} ${label} ==========`;
 }
 
-function getWindowTitle({ phase = 'Idle', turn = 0, maxTurns = 0, exitCode = 0 }) {
-  if (phase === 'Running') return `codex-autopilot | Turn ${turn}/${maxTurns}`;
-  if (phase === 'Completed') return 'codex-autopilot | 已完成';
-  if (phase === 'Failed') return `codex-autopilot | 失败(${exitCode})`;
+function getWindowTitle({
+  phase = 'Idle',
+  turn = 0,
+  maxTurns = 0,
+  retryAttempt = 0,
+  retryCount = 0,
+  sessionId = '',
+  exitCode = 0
+}) {
+  const sessionPart = sessionId ? ` | session ${sessionId.slice(0, 8)}` : '';
+  if (phase === 'Running') return `codex-autopilot | 运行中 ${turn}/${maxTurns} | retry ${retryAttempt}/${retryCount}${sessionPart}`;
+  if (phase === 'Retrying') return `codex-autopilot | 重试中 ${turn}/${maxTurns} | retry ${retryAttempt}/${retryCount}${sessionPart}`;
+  if (phase === 'Sleeping') return `codex-autopilot | 休眠中 ${turn}/${maxTurns} | retry ${retryAttempt}/${retryCount}${sessionPart}`;
+  if (phase === 'Completed') return `codex-autopilot | 已完成 ${turn}/${maxTurns}${sessionPart}`;
+  if (phase === 'Failed') return `codex-autopilot | 失败 ${turn}/${maxTurns} | retry ${retryAttempt}/${retryCount}${sessionPart} | exit ${exitCode}`;
   return 'codex-autopilot';
 }
 

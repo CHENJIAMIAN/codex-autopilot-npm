@@ -4,7 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 const fs = require('node:fs/promises');
 
-const { invokeCodexAutopilot } = require('../src/autopilot');
+const { invokeCodexAutopilot, getWindowTitle } = require('../src/autopilot');
 
 test('continues for max turns and writes loop state', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-autopilot-loop-'));
@@ -242,6 +242,79 @@ test('renders failed status line before stopping on non-zero exit', async () => 
   assert.ok(
     writes.some((message) => typeof message === 'string' && message.includes('[失败] Turn 1/1 | retry 1/1')),
     `expected failed status line in writes: ${JSON.stringify(writes)}`
+  );
+});
+
+test('formats extended window titles for running phases', () => {
+  assert.equal(
+    getWindowTitle({
+      phase: 'Running',
+      turn: 3,
+      maxTurns: 10,
+      retryAttempt: 0,
+      retryCount: 2,
+      sessionId: 'abcdef12-ffff-ffff-ffff-ffffffffffff'
+    }),
+    'codex-autopilot | 运行中 3/10 | retry 0/2 | session abcdef12'
+  );
+
+  assert.equal(
+    getWindowTitle({
+      phase: 'Retrying',
+      turn: 3,
+      maxTurns: 10,
+      retryAttempt: 1,
+      retryCount: 2,
+      sessionId: 'abcdef12-ffff-ffff-ffff-ffffffffffff'
+    }),
+    'codex-autopilot | 重试中 3/10 | retry 1/2 | session abcdef12'
+  );
+});
+
+test('updates window title with retry and session progress during automatic turns', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-autopilot-title-'));
+  const lastMessageFile = path.join(dir, 'last.txt');
+  const runStateFile = path.join(dir, 'run-state.json');
+  const logFile = path.join(dir, 'autopilot.log');
+  const titles = [];
+
+  const exitCode = await invokeCodexAutopilot({
+    maxTurns: 2,
+    sleepSeconds: 0,
+    retryCount: 1,
+    retryDelaySeconds: 0,
+    lastMessageFile,
+    logFile,
+    runStateFile,
+    resumePrompt: '继续',
+    sessionId: 'abcdef12-ffff-ffff-ffff-ffffffffffff',
+    workingDirectory: dir,
+    codexRunner: async ({ turn, attempt }) => {
+      if (turn === 1 && attempt === 0) return 9;
+      await fs.writeFile(lastMessageFile, `answer ${turn}`, 'utf8');
+      return 0;
+    },
+    writeHost: () => {},
+    setWindowTitle: (title) => titles.push(title),
+    sleep: async () => {}
+  });
+
+  assert.equal(exitCode, 0);
+  assert.ok(
+    titles.includes('codex-autopilot | 运行中 1/2 | retry 0/1 | session abcdef12'),
+    `expected running title in ${JSON.stringify(titles)}`
+  );
+  assert.ok(
+    titles.includes('codex-autopilot | 重试中 1/2 | retry 1/1 | session abcdef12'),
+    `expected retry title in ${JSON.stringify(titles)}`
+  );
+  assert.ok(
+    titles.includes('codex-autopilot | 休眠中 1/2 | retry 1/1 | session abcdef12'),
+    `expected sleeping title in ${JSON.stringify(titles)}`
+  );
+  assert.ok(
+    titles.includes('codex-autopilot | 已完成 2/2 | session abcdef12'),
+    `expected completed title in ${JSON.stringify(titles)}`
   );
 });
 
