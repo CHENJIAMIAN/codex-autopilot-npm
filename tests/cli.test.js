@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { main, parseArgs } = require('../src/cli');
+const { version } = require('../package.json');
 
 test('parses kebab-case options', () => {
   const options = parseArgs([
@@ -51,5 +52,5 @@ test('prints version through injectable stdout', async () => {
   });
 
   assert.equal(exitCode, 0);
-  assert.equal(output.trim(), '0.1.0');
+  assert.equal(output.trim(), version);
 });

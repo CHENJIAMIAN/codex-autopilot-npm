@@ -3,6 +3,7 @@ const { mkdir, writeFile } = require('node:fs/promises');
 
 const { getCodexExecArgumentList, invokeCodexCommand, getCodexExecutablePath, convertToProcessArgumentString } = require('./codex');
 const { writeAutopilotLog } = require('./log');
+const { createStatusLine, formatStatusLine } = require('./status-line');
 const { getAutopilotResumeTurn, readAutopilotRunState, writeAutopilotRunState } = require('./state');
 const { readTextFileIfExists } = require('./text');
 const { ui } = require('./ui');
@@ -29,6 +30,9 @@ async function invokeCodexAutopilot({
   sleep = defaultSleep
 }) {
   const log = async (message) => writeAutopilotLog(logFile, message);
+  const statusLine = createStatusLine({ writeHost });
+  const writeOutput = (message = '') => statusLine.println(message);
+  const workingDirectoryName = workingDirectory ? pathModule.basename(workingDirectory) : '';
   const restoreLogs = [];
   let turn = getAutopilotResumeTurn({
     state: await readAutopilotRunState(runStateFile),
@@ -41,7 +45,16 @@ async function invokeCodexAutopilot({
 
   if (turn >= maxTurns) {
     setWindowTitle(getWindowTitle({ phase: 'Completed' }));
-    writeHost(ui.maxTurnsReached.replace('{0}', maxTurns));
+    statusLine.finish(formatStatusLine({
+      phase: '已完成',
+      turn: maxTurns,
+      maxTurns,
+      retryAttempt: 0,
+      retryCount,
+      sessionId,
+      workingDirectoryName
+    }));
+    writeOutput(ui.maxTurnsReached.replace('{0}', maxTurns));
     return 0;
   }
 
@@ -50,8 +63,17 @@ async function invokeCodexAutopilot({
     turn += 1;
     await log(`event=turn_start turn=${turn} max_turns=${maxTurns} session_id=${sessionId || '-'} working_directory=${workingDirectory || '-'}`);
     setWindowTitle(getWindowTitle({ phase: 'Running', turn, maxTurns }));
-    writeHost('');
-    writeHost(getTurnBanner({ turn, maxTurns, phase: 'Begin' }));
+    statusLine.render(formatStatusLine({
+      phase: '运行中',
+      turn,
+      maxTurns,
+      retryAttempt: 0,
+      retryCount,
+      sessionId,
+      workingDirectoryName
+    }));
+    writeOutput('');
+    writeOutput(getTurnBanner({ turn, maxTurns, phase: 'Begin' }));
 
     const args = getCodexExecArgumentList({
       lastMessageFile,
@@ -66,6 +88,15 @@ async function invokeCodexAutopilot({
     let exitCode = 0;
     let stallRecovered = false;
     do {
+      statusLine.render(formatStatusLine({
+        phase: attempt > 0 ? '重试中' : '运行中',
+        turn,
+        maxTurns,
+        retryAttempt: attempt,
+        retryCount,
+        sessionId,
+        workingDirectoryName
+      }));
       await clearLastMessageFile({ path: lastMessageFile, turn, attempt, log });
       const executablePath = codexRunner ? 'codex' : getCodexExecutablePath();
       const commandForLog = convertToProcessArgumentString([executablePath, ...args]);
@@ -106,6 +137,15 @@ async function invokeCodexAutopilot({
       const stopReason = retryCount > 0 ? 'exec_retry_exhausted' : 'exec_exit_nonzero';
       lastMessage = await readLastMessageFile({ path: lastMessageFile, turn, log });
       setWindowTitle(getWindowTitle({ phase: 'Failed', exitCode }));
+      statusLine.finish(formatStatusLine({
+        phase: '失败',
+        turn,
+        maxTurns,
+        retryAttempt: attempt,
+        retryCount,
+        sessionId,
+        workingDirectoryName
+      }));
       await log(`event=stop reason=${stopReason} turn=${turn} exit_code=${exitCode}`);
       await writeAutopilotRunState({
         path: runStateFile,
@@ -118,19 +158,19 @@ async function invokeCodexAutopilot({
         lastMessage,
         stallRecovered
       });
-      writeHost(ui.execExitCode.replace('{0}', exitCode));
+      writeOutput(ui.execExitCode.replace('{0}', exitCode));
       return exitCode;
     }
 
     lastMessage = await readLastMessageFile({ path: lastMessageFile, turn, log });
     if (lastMessage.trim()) {
-      writeHost('');
-      writeHost(ui.lastMessageHeader);
-      writeHost(lastMessage.trimEnd());
-      writeHost('----------------------------');
+      writeOutput('');
+      writeOutput(ui.lastMessageHeader);
+      writeOutput(lastMessage.trimEnd());
+      writeOutput('----------------------------');
     }
 
-    writeHost(getTurnBanner({ turn, maxTurns, phase: 'End' }));
+    writeOutput(getTurnBanner({ turn, maxTurns, phase: 'End' }));
     await log(`event=turn_end turn=${turn} exit_code=${exitCode}`);
     await writeAutopilotRunState({
       path: runStateFile,
@@ -145,6 +185,16 @@ async function invokeCodexAutopilot({
     });
 
     if (turn < maxTurns) {
+      statusLine.render(formatStatusLine({
+        phase: '休眠中',
+        turn,
+        maxTurns,
+        retryAttempt: attempt,
+        retryCount,
+        sessionId,
+        workingDirectoryName,
+        sleepSeconds
+      }));
       await log(`event=sleep_start turn=${turn} seconds=${sleepSeconds}`);
       if (sleepSeconds > 0) await sleep(sleepSeconds);
       await log(`event=sleep_end turn=${turn}`);
@@ -153,6 +203,15 @@ async function invokeCodexAutopilot({
   }
 
   setWindowTitle(getWindowTitle({ phase: 'Completed' }));
+  statusLine.finish(formatStatusLine({
+    phase: '已完成',
+    turn,
+    maxTurns,
+    retryAttempt: 0,
+    retryCount,
+    sessionId,
+    workingDirectoryName
+  }));
   await log(`event=stop reason=max_turns_reached turn=${turn} exit_code=0`);
   await writeAutopilotRunState({
     path: runStateFile,
@@ -165,7 +224,7 @@ async function invokeCodexAutopilot({
     lastMessage,
     stallRecovered: false
   });
-  writeHost(ui.maxTurnsReached.replace('{0}', maxTurns));
+  writeOutput(ui.maxTurnsReached.replace('{0}', maxTurns));
   return 0;
 }
 

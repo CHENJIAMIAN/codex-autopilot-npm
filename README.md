@@ -35,6 +35,7 @@ The default interactive flow is:
 - Retry transient non-zero `codex exec` exits without consuming extra turns.
 - Isolate the Codex last-message output file per Node process.
 - Read Codex rollout JSONL files and show working directory plus preview.
+- Show a lightweight live status line during automatic turns with phase, turn, retry, session, and cwd summary.
 - Preserve UTF-8 output for Chinese prompts and logs.
 
 ## Common Commands
