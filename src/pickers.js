@@ -139,8 +139,7 @@ async function resolveSessionContext({ sessionId, sessionsDir, sessionLimit = 30
     return { sessionId, workingDirectory: entry.workingDirectory };
   }
 
-  const pickerMaxCount = findCommand('fzf') ? Number.MAX_SAFE_INTEGER : sessionLimit;
-  const entries = await getCodexSessionEntries({ sessionsDir, maxCount: pickerMaxCount });
+  const entries = await getCodexSessionEntries({ sessionsDir, maxCount: sessionLimit });
   const selected = await selectCodexSession({ entries });
   if (!selected.workingDirectory) throw new Error(ui.noSessionWorkingDirectory);
   output.write(`${ui.resumingSession.replace('{0}', selected.sessionId)}\n`);

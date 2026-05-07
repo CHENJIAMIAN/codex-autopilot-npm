@@ -58,10 +58,120 @@ async function readFirstJsonLine(filePath) {
   }
 }
 
+async function readRolloutSummary(filePath, maxPreviewLength = 80) {
+  let sessionMetaPayload = null;
+  let preview = '(no preview)';
+  let fallbackMessage = null;
+  let pending = '';
+  let processedBytes = 0;
+  const chunkSize = 16 * 1024;
+  const maxBytes = 128 * 1024;
+  let handle;
+
+  try {
+    handle = await fs.open(filePath, 'r');
+    const buffer = Buffer.alloc(chunkSize);
+
+    while (processedBytes < maxBytes) {
+      const { bytesRead } = await handle.read(buffer, 0, chunkSize, processedBytes);
+      if (bytesRead <= 0) break;
+      processedBytes += bytesRead;
+      pending += buffer.toString('utf8', 0, bytesRead);
+
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() || '';
+
+      ({ sessionMetaPayload, preview, fallbackMessage } = processRolloutLines({
+        lines,
+        sessionMetaPayload,
+        preview,
+        fallbackMessage,
+        maxPreviewLength
+      }));
+
+      if (preview !== '(no preview)' && sessionMetaPayload) {
+        break;
+      }
+    }
+
+    if ((preview === '(no preview)' || !sessionMetaPayload) && pending.trim()) {
+      ({ sessionMetaPayload, preview, fallbackMessage } = processRolloutLines({
+        lines: [pending],
+        sessionMetaPayload,
+        preview,
+        fallbackMessage,
+        maxPreviewLength
+      }));
+    }
+  } catch {
+    return {
+      sessionMetaPayload: null,
+      preview: '(no preview)'
+    };
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+
+  if (preview === '(no preview)' && fallbackMessage && String(fallbackMessage).trim()) {
+    preview = normalizePreview(fallbackMessage, maxPreviewLength);
+  }
+
+  return {
+    sessionMetaPayload,
+    preview
+  };
+}
+
+function processRolloutLines({
+  lines,
+  sessionMetaPayload,
+  preview,
+  fallbackMessage,
+  maxPreviewLength
+}) {
+  for (const line of lines) {
+    if (!line.trim()) continue;
+
+    let item;
+    try {
+      item = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    if (!sessionMetaPayload && item.type === 'session_meta') {
+      sessionMetaPayload = item.payload || null;
+    }
+
+    let message = null;
+    if (item.type === 'event_msg' && item.payload?.type === 'user_message') {
+      message = item.payload.message;
+    }
+
+    if (!message && !fallbackMessage && item.payload?.type === 'message' && item.payload?.role === 'user') {
+      for (const contentItem of item.payload.content || []) {
+        if (contentItem.type === 'input_text' && contentItem.text) {
+          fallbackMessage = contentItem.text;
+          break;
+        }
+      }
+    }
+
+    if (preview === '(no preview)' && message && String(message).trim()) {
+      preview = normalizePreview(message, maxPreviewLength);
+    }
+  }
+
+  return {
+    sessionMetaPayload,
+    preview,
+    fallbackMessage
+  };
+}
+
 async function getSessionMetaPayloadFromRollout(filePath) {
-  const item = await readFirstJsonLine(filePath);
-  if (!item || item.type !== 'session_meta') return null;
-  return item.payload || null;
+  const summary = await readRolloutSummary(filePath);
+  return summary.sessionMetaPayload;
 }
 
 function normalizePreview(message, maxLength) {
@@ -70,48 +180,12 @@ function normalizePreview(message, maxLength) {
 }
 
 async function getSessionPreviewFromRollout(filePath, maxLength = 80) {
-  let fallbackMessage = null;
-  try {
-    const content = await fs.readFile(filePath, 'utf8');
-    for (const line of content.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      let item;
-      try {
-        item = JSON.parse(line);
-      } catch {
-        continue;
-      }
-
-      let message = null;
-      if (item.type === 'event_msg' && item.payload?.type === 'user_message') {
-        message = item.payload.message;
-      }
-
-      if (!message && !fallbackMessage && item.payload?.type === 'message' && item.payload?.role === 'user') {
-        for (const contentItem of item.payload.content || []) {
-          if (contentItem.type === 'input_text' && contentItem.text) {
-            fallbackMessage = contentItem.text;
-            break;
-          }
-        }
-      }
-
-      if (message && String(message).trim()) {
-        return normalizePreview(message, maxLength);
-      }
-    }
-  } catch {
-    return '(no preview)';
-  }
-
-  if (fallbackMessage && String(fallbackMessage).trim()) {
-    return normalizePreview(fallbackMessage, maxLength);
-  }
-  return '(no preview)';
+  const summary = await readRolloutSummary(filePath, maxLength);
+  return summary.preview;
 }
 
 async function testIsPrimarySessionRollout(filePath) {
-  const payload = await getSessionMetaPayloadFromRollout(filePath);
+  const { sessionMetaPayload: payload } = await readRolloutSummary(filePath);
   if (payload === null) return true;
   if (payload.source?.subagent !== undefined && payload.source?.subagent !== null) return false;
   const role = String(payload.agent_role || '');
@@ -157,11 +231,13 @@ async function getCodexSessionEntries({ sessionsDir, maxCount = 30 }) {
 
   const entries = [];
   for (const file of files) {
-    if (!(await testIsPrimarySessionRollout(file.fullPath))) continue;
     const sessionId = getSessionIdFromRolloutPath(file.fullPath);
     if (!sessionId) continue;
-    const payload = await getSessionMetaPayloadFromRollout(file.fullPath);
-    let preview = await getSessionPreviewFromRollout(file.fullPath);
+    const { sessionMetaPayload: payload, preview: rawPreview } = await readRolloutSummary(file.fullPath);
+    if (payload?.source?.subagent !== undefined && payload?.source?.subagent !== null) continue;
+    const role = String(payload?.agent_role || '');
+    if (role.trim() && role !== 'default') continue;
+    let preview = rawPreview;
     if (preview === '(no preview)' && payload?.cwd) {
       preview = `No user message | ${payload.cwd}`;
     } else if (preview === '(no preview)') {
@@ -188,6 +264,7 @@ module.exports = {
   formatSessionLastUsedTime,
   getSessionMetaPayloadFromRollout,
   getSessionPreviewFromRollout,
+  readRolloutSummary,
   testIsPrimarySessionRollout,
   getCodexSessionEntries
 };
