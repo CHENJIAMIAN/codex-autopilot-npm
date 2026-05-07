@@ -238,6 +238,42 @@ test('updates window title with retry and session progress during automatic turn
   );
 });
 
+test('reapplies window title while a turn is still running', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-autopilot-title-guard-'));
+  const lastMessageFile = path.join(dir, 'last.txt');
+  const runStateFile = path.join(dir, 'run-state.json');
+  const logFile = path.join(dir, 'autopilot.log');
+  const titles = [];
+
+  const exitCode = await invokeCodexAutopilot({
+    maxTurns: 1,
+    sleepSeconds: 0,
+    retryCount: 0,
+    titleRefreshIntervalMs: 10,
+    lastMessageFile,
+    logFile,
+    runStateFile,
+    resumePrompt: '继续',
+    sessionId: 'abcdef12-ffff-ffff-ffff-ffffffffffff',
+    workingDirectory: dir,
+    codexRunner: async () => {
+      await fs.writeFile(lastMessageFile, 'answer 1', 'utf8');
+      await new Promise((resolve) => setTimeout(resolve, 35));
+      return 0;
+    },
+    writeHost: () => {},
+    setWindowTitle: (title) => titles.push(title),
+    sleep: async () => {}
+  });
+
+  assert.equal(exitCode, 0);
+  const runningTitle = 'codex-autopilot | 运行中 1/1 | retry 0/0 | session abcdef12';
+  assert.ok(
+    titles.filter((title) => title === runningTitle).length >= 3,
+    `expected running title to be reapplied, got ${JSON.stringify(titles)}`
+  );
+});
+
 async function safeRead(file) {
   try {
     return await fs.readFile(file, 'utf8');
