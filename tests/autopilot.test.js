@@ -165,6 +165,39 @@ test('does not render status line during automatic turns', async () => {
   );
 });
 
+test('writes host-visible output to the autopilot log', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-autopilot-visible-log-'));
+  const lastMessageFile = path.join(dir, 'last.txt');
+  const runStateFile = path.join(dir, 'run-state.json');
+  const logFile = path.join(dir, 'autopilot.log');
+
+  const exitCode = await invokeCodexAutopilot({
+    maxTurns: 1,
+    sleepSeconds: 0,
+    lastMessageFile,
+    logFile,
+    runStateFile,
+    resumePrompt: '继续',
+    sessionId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+    workingDirectory: dir,
+    codexRunner: async () => {
+      await fs.writeFile(lastMessageFile, 'final answer', 'utf8');
+      return 0;
+    },
+    writeHost: () => {},
+    setWindowTitle: () => {},
+    sleep: async () => {}
+  });
+
+  assert.equal(exitCode, 0);
+  const log = await fs.readFile(logFile, 'utf8');
+  assert.match(log, /========== Turn 1 \/ 1 开始 ==========\n/);
+  assert.match(log, /--- 模型的最后消息 ---\n/);
+  assert.match(log, /final answer\n/);
+  assert.doesNotMatch(log, /event=visible_output/);
+  assert.doesNotMatch(log, /source=host/);
+});
+
 test('formats extended window titles for running phases', () => {
   assert.equal(
     getWindowTitle({

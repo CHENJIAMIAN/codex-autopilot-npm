@@ -7,8 +7,10 @@ const { readTextFileIfExists } = require('./text');
 const { getCodexSessionEntries } = require('./sessions');
 
 async function getResumePromptOptions(promptsFile) {
-  if (promptsFile) {
-    const content = await readTextFileIfExists(promptsFile);
+  const promptFiles = Array.isArray(promptsFile) ? promptsFile : [promptsFile];
+  for (const promptFile of promptFiles) {
+    if (!promptFile) continue;
+    const content = await readTextFileIfExists(promptFile);
     const options = content
       .split(/\r?\n/)
       .map((line) => line.trim())

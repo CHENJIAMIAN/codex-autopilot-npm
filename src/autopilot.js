@@ -2,7 +2,7 @@ const pathModule = require('node:path');
 const { mkdir, writeFile } = require('node:fs/promises');
 
 const { getCodexExecArgumentList, invokeCodexCommand, getCodexExecutablePath, convertToProcessArgumentString } = require('./codex');
-const { writeAutopilotLog } = require('./log');
+const { createVisibleOutputLogger, writeAutopilotLog, writeVisibleOutputLog } = require('./log');
 const { getAutopilotResumeTurn, readAutopilotRunState, writeAutopilotRunState } = require('./state');
 const { readTextFileIfExists } = require('./text');
 const { ui } = require('./ui');
@@ -14,6 +14,7 @@ async function invokeCodexAutopilot({
   retryDelaySeconds = 5,
   lastMessageFile,
   logFile,
+  transcriptFile = logFile,
   turnStallTimeoutSeconds = 1800,
   lastMessageStableSeconds = 30,
   resumePrompt,
@@ -30,6 +31,13 @@ async function invokeCodexAutopilot({
   sleep = defaultSleep
 }) {
   const log = async (message) => writeAutopilotLog(logFile, message);
+  const visibleOutputLogger = createVisibleOutputLogger({
+    write: (chunk) => writeVisibleOutputLog(transcriptFile, chunk)
+  });
+  const writeVisibleHost = async (message = '') => {
+    writeHost(message);
+    await visibleOutputLogger.write('host', `${String(message)}\n`);
+  };
   const titleGuard = createWindowTitleGuard({
     setWindowTitle,
     refreshIntervalMs: titleRefreshIntervalMs
@@ -52,7 +60,7 @@ async function invokeCodexAutopilot({
         maxTurns,
         sessionId
       }));
-      writeHost(ui.maxTurnsReached.replace('{0}', maxTurns));
+      await writeVisibleHost(ui.maxTurnsReached.replace('{0}', maxTurns));
       return 0;
     }
 
@@ -68,8 +76,8 @@ async function invokeCodexAutopilot({
         retryCount,
         sessionId
       }));
-      writeHost('');
-      writeHost(getTurnBanner({ turn, maxTurns, phase: 'Begin' }));
+      await writeVisibleHost('');
+      await writeVisibleHost(getTurnBanner({ turn, maxTurns, phase: 'Begin' }));
 
       const args = getCodexExecArgumentList({
         lastMessageFile,
@@ -105,8 +113,11 @@ async function invokeCodexAutopilot({
           lastMessageFile,
           turnStallTimeoutSeconds,
           lastMessageStableSeconds,
-          log
+          log,
+          onStdoutChunk: (chunk) => visibleOutputLogger.write('stdout', chunk),
+          onStderrChunk: (chunk) => visibleOutputLogger.write('stderr', chunk)
         });
+        await visibleOutputLogger.flush();
 
         if (Number.isInteger(commandResult)) {
           exitCode = commandResult;
@@ -152,19 +163,19 @@ async function invokeCodexAutopilot({
           lastMessage,
           stallRecovered
         });
-        writeHost(ui.execExitCode.replace('{0}', exitCode));
+        await writeVisibleHost(ui.execExitCode.replace('{0}', exitCode));
         return exitCode;
       }
 
       lastMessage = await readLastMessageFile({ path: lastMessageFile, turn, log });
       if (lastMessage.trim()) {
-        writeHost('');
-        writeHost(ui.lastMessageHeader);
-        writeHost(lastMessage.trimEnd());
-        writeHost('----------------------------');
+        await writeVisibleHost('');
+        await writeVisibleHost(ui.lastMessageHeader);
+        await writeVisibleHost(lastMessage.trimEnd());
+        await writeVisibleHost('----------------------------');
       }
 
-      writeHost(getTurnBanner({ turn, maxTurns, phase: 'End' }));
+      await writeVisibleHost(getTurnBanner({ turn, maxTurns, phase: 'End' }));
       await log(`event=turn_end turn=${turn} exit_code=${exitCode}`);
       await writeAutopilotRunState({
         path: runStateFile,
@@ -212,10 +223,14 @@ async function invokeCodexAutopilot({
       lastMessage,
       stallRecovered: false
     });
-    writeHost(ui.maxTurnsReached.replace('{0}', maxTurns));
+    await writeVisibleHost(ui.maxTurnsReached.replace('{0}', maxTurns));
     return 0;
   } finally {
-    titleGuard.stop();
+    try {
+      await visibleOutputLogger.flush();
+    } finally {
+      titleGuard.stop();
+    }
   }
 }
 
@@ -228,7 +243,9 @@ async function runCodex({
   lastMessageFile,
   turnStallTimeoutSeconds,
   lastMessageStableSeconds,
-  log
+  log,
+  onStdoutChunk,
+  onStderrChunk
 }) {
   if (codexRunner) {
     return codexRunner({ args, turn, attempt, cwd: workingDirectory });
@@ -240,7 +257,9 @@ async function runCodex({
     lastMessageFile,
     turnStallTimeoutSeconds,
     lastMessageStableSeconds,
-    log
+    log,
+    onStdoutChunk,
+    onStderrChunk
   });
 }
 

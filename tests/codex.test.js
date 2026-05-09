@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
@@ -6,6 +7,7 @@ const test = require('node:test');
 const {
   getCodexExecArgumentList,
   getCodexExecutablePath,
+  invokeCodexCommand,
   testCodexTurnStalled
 } = require('../src/codex');
 
@@ -93,6 +95,81 @@ test('detects a stalled turn only when last message is non-empty and stable', as
     turnStallTimeoutSeconds: 30,
     lastMessageStableSeconds: 30
   }), true);
+});
+
+test('tees codex stdout and stderr to callers while preserving visible writes', async () => {
+  const stdoutWrites = [];
+  const stderrWrites = [];
+  const loggedChunks = [];
+
+  const exitCode = await invokeCodexCommand({
+    argumentList: ['exec'],
+    cwd: 'C:\\Work',
+    executablePath: 'C:\\Tools\\codex.exe',
+    stdout: { write: (chunk) => stdoutWrites.push(String(chunk)) },
+    stderr: { write: (chunk) => stderrWrites.push(String(chunk)) },
+    onStdoutChunk: (chunk) => loggedChunks.push(['stdout', String(chunk)]),
+    onStderrChunk: (chunk) => loggedChunks.push(['stderr', String(chunk)]),
+    spawn: (filePath, argumentList, options) => {
+      assert.equal(filePath, 'C:\\Tools\\codex.exe');
+      assert.deepEqual(argumentList, ['exec']);
+      assert.equal(options.cwd, 'C:\\Work');
+      assert.deepEqual(options.stdio, ['ignore', 'pipe', 'pipe']);
+
+      const processHandle = new EventEmitter();
+      processHandle.stdout = new EventEmitter();
+      processHandle.stderr = new EventEmitter();
+      process.nextTick(() => {
+        processHandle.stdout.emit('data', Buffer.from('visible stdout'));
+        processHandle.stderr.emit('data', Buffer.from('visible stderr'));
+        processHandle.emit('exit', 0);
+        processHandle.emit('close', 0);
+      });
+      return processHandle;
+    }
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(stdoutWrites, ['visible stdout']);
+  assert.deepEqual(stderrWrites, ['visible stderr']);
+  assert.deepEqual(loggedChunks, [
+    ['stdout', 'visible stdout'],
+    ['stderr', 'visible stderr']
+  ]);
+});
+
+test('waits for piped codex output to close before resolving', async () => {
+  const loggedChunks = [];
+  let processHandle;
+  let resolvedCode;
+
+  const command = invokeCodexCommand({
+    argumentList: ['exec'],
+    cwd: 'C:\\Work',
+    executablePath: 'C:\\Tools\\codex.exe',
+    stdout: { write: () => {} },
+    stderr: { write: () => {} },
+    onStdoutChunk: (chunk) => loggedChunks.push(String(chunk)),
+    spawn: () => {
+      processHandle = new EventEmitter();
+      processHandle.stdout = new EventEmitter();
+      processHandle.stderr = new EventEmitter();
+      return processHandle;
+    }
+  }).then((code) => {
+    resolvedCode = code;
+    return code;
+  });
+
+  processHandle.emit('exit', 0);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolvedCode, undefined);
+
+  processHandle.stdout.emit('data', Buffer.from('late stdout'));
+  processHandle.emit('close', 0);
+
+  assert.equal(await command, 0);
+  assert.deepEqual(loggedChunks, ['late stdout']);
 });
 
 async function fsTempFile(content) {

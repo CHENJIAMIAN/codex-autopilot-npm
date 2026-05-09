@@ -1,7 +1,40 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 
-const { selectResumePrompt, resolveSessionContext } = require('../src/pickers');
+const { getResumePromptOptions, selectResumePrompt, resolveSessionContext } = require('../src/pickers');
+
+test('loads resume prompts from the first non-empty prompts file', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-autopilot-prompts-'));
+  const userPrompts = path.join(dir, 'user-prompts.txt');
+  const packagePrompts = path.join(dir, 'package-prompts.txt');
+  await fs.writeFile(userPrompts, '用户提示一\n用户提示二\n', 'utf8');
+  await fs.writeFile(packagePrompts, '包内提示\n', 'utf8');
+
+  const options = await getResumePromptOptions([userPrompts, packagePrompts]);
+
+  assert.deepEqual(options, ['用户提示一', '用户提示二']);
+});
+
+test('falls back to package resume prompts when the user prompts file is missing or empty', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-autopilot-prompts-'));
+  const missingUserPrompts = path.join(dir, 'missing-user-prompts.txt');
+  const emptyUserPrompts = path.join(dir, 'empty-user-prompts.txt');
+  const packagePrompts = path.join(dir, 'package-prompts.txt');
+  await fs.writeFile(emptyUserPrompts, '  \n\n', 'utf8');
+  await fs.writeFile(packagePrompts, '包内提示\n', 'utf8');
+
+  assert.deepEqual(
+    await getResumePromptOptions([missingUserPrompts, packagePrompts]),
+    ['包内提示']
+  );
+  assert.deepEqual(
+    await getResumePromptOptions([emptyUserPrompts, packagePrompts]),
+    ['包内提示']
+  );
+});
 
 test('allows custom resume prompt from interactive picker', async () => {
   const questions = [];

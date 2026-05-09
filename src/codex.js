@@ -81,11 +81,24 @@ function startCodexProcess({
   filePath,
   argumentList,
   cwd,
-  spawn = childProcess.spawn
+  spawn = childProcess.spawn,
+  stdout = process.stdout,
+  stderr = process.stderr,
+  onStdoutChunk,
+  onStderrChunk
 }) {
   const lower = filePath.toLowerCase();
+  const shouldPipeOutput = Boolean(
+    onStdoutChunk ||
+    onStderrChunk ||
+    stdout !== process.stdout ||
+    stderr !== process.stderr
+  );
+  const stdio = shouldPipeOutput ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'inherit', 'inherit'];
+  let processHandle;
+
   if (lower.endsWith('.ps1')) {
-    return spawn(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'), [
+    processHandle = spawn(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'), [
       '-NoLogo',
       '-NoProfile',
       '-ExecutionPolicy',
@@ -95,32 +108,103 @@ function startCodexProcess({
       ...argumentList
     ], {
       cwd,
-      stdio: ['ignore', 'inherit', 'inherit']
+      stdio
+    });
+    attachProcessOutputTee(processHandle, {
+      enabled: shouldPipeOutput,
+      stdout,
+      stderr,
+      onStdoutChunk,
+      onStderrChunk
+    });
+    return processHandle;
+  }
+
+  processHandle = spawn(filePath, argumentList, {
+    cwd,
+    stdio,
+    shell: lower.endsWith('.cmd') || lower.endsWith('.bat')
+  });
+  attachProcessOutputTee(processHandle, {
+    enabled: shouldPipeOutput,
+    stdout,
+    stderr,
+    onStdoutChunk,
+    onStderrChunk
+  });
+  return processHandle;
+}
+
+function attachProcessOutputTee({
+  stdout: childStdout,
+  stderr: childStderr
+}, {
+  enabled,
+  stdout,
+  stderr,
+  onStdoutChunk,
+  onStderrChunk
+}) {
+  if (!enabled) return;
+
+  if (childStdout) {
+    childStdout.on('data', (chunk) => {
+      stdout.write(chunk);
+      if (onStdoutChunk) onStdoutChunk(chunk);
     });
   }
 
-  return spawn(filePath, argumentList, {
-    cwd,
-    stdio: ['ignore', 'inherit', 'inherit'],
-    shell: lower.endsWith('.cmd') || lower.endsWith('.bat')
-  });
+  if (childStderr) {
+    childStderr.on('data', (chunk) => {
+      stderr.write(chunk);
+      if (onStderrChunk) onStderrChunk(chunk);
+    });
+  }
 }
 
 function invokeCodexExecutable({
   argumentList,
   cwd,
   executablePath = getCodexExecutablePath(),
-  spawn = childProcess.spawn
+  spawn = childProcess.spawn,
+  stdout = process.stdout,
+  stderr = process.stderr,
+  onStdoutChunk,
+  onStderrChunk
 }) {
   return new Promise((resolve, reject) => {
     const processHandle = startCodexProcess({
       filePath: executablePath,
       argumentList,
       cwd,
-      spawn
+      spawn,
+      stdout,
+      stderr,
+      onStdoutChunk,
+      onStderrChunk
     });
-    processHandle.once('error', reject);
-    processHandle.once('exit', (code) => resolve(Number.isInteger(code) ? code : 1));
+    let exitCode = 1;
+    let settled = false;
+    const waitForClose = Boolean(processHandle.stdout || processHandle.stderr);
+
+    function settle(code) {
+      if (settled) return;
+      settled = true;
+      resolve(normalizeExitCode(code));
+    }
+
+    processHandle.once('error', (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
+    processHandle.once('exit', (code) => {
+      exitCode = normalizeExitCode(code);
+      if (!waitForClose) settle(exitCode);
+    });
+    processHandle.once('close', (code) => {
+      settle(Number.isInteger(code) ? code : exitCode);
+    });
   });
 }
 
@@ -176,6 +260,8 @@ function waitForCodexProcessExit({
   const turnStartTime = new Date();
   return new Promise((resolve, reject) => {
     let settled = false;
+    let exitCode = 1;
+    const waitForClose = Boolean(processHandle.stdout || processHandle.stderr);
     const interval = setInterval(async () => {
       if (settled) return;
       if (testCodexTurnStalled({
@@ -201,11 +287,24 @@ function waitForCodexProcessExit({
     });
     processHandle.once('exit', (code) => {
       if (settled) return;
+      exitCode = normalizeExitCode(code);
+      if (!waitForClose) {
+        settled = true;
+        clearInterval(interval);
+        resolve({ exitCode, stallRecovered: false });
+      }
+    });
+    processHandle.once('close', (code) => {
+      if (settled) return;
       settled = true;
       clearInterval(interval);
-      resolve({ exitCode: Number.isInteger(code) ? code : 1, stallRecovered: false });
+      resolve({ exitCode: Number.isInteger(code) ? code : exitCode, stallRecovered: false });
     });
   });
+}
+
+function normalizeExitCode(code) {
+  return Number.isInteger(code) ? code : 1;
 }
 
 function invokeCodexCommand({
@@ -217,14 +316,22 @@ function invokeCodexCommand({
   lastMessageStableSeconds = 30,
   log = async () => {},
   executablePath = getCodexExecutablePath(),
-  spawn = childProcess.spawn
+  spawn = childProcess.spawn,
+  stdout = process.stdout,
+  stderr = process.stderr,
+  onStdoutChunk,
+  onStderrChunk
 }) {
   if (turnStallTimeoutSeconds > 0 && lastMessageFile && turn > 0) {
     const processHandle = startCodexProcess({
       filePath: executablePath,
       argumentList,
       cwd,
-      spawn
+      spawn,
+      stdout,
+      stderr,
+      onStdoutChunk,
+      onStderrChunk
     });
     return waitForCodexProcessExit({
       processHandle,
@@ -240,7 +347,11 @@ function invokeCodexCommand({
     argumentList,
     cwd,
     executablePath,
-    spawn
+    spawn,
+    stdout,
+    stderr,
+    onStdoutChunk,
+    onStderrChunk
   });
 }
 
@@ -256,6 +367,7 @@ module.exports = {
   getCodexExecArgumentList,
   getCodexExecutablePath,
   startCodexProcess,
+  attachProcessOutputTee,
   invokeCodexExecutable,
   invokeCodexCommand,
   testCodexTurnStalled,

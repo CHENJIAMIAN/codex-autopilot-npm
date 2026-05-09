@@ -1,6 +1,6 @@
 {
   "name": "codex-autopilot-npm",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Windows CLI to resume Codex sessions and keep them moving turn by turn.",
   "license": "MIT",
   "homepage": "https://github.com/CHENJIAMIAN/codex-autopilot-npm#readme",
